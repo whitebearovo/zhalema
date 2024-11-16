@@ -1,5 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:a114514/learn.dart'; // 根据项目名称正确导入
+import 'package:http/http.dart' as http;
 
 void main() => runApp(MyApp());
 
@@ -7,9 +8,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Silema',
+      title: 'Flutter Example',
       theme: ThemeData(
-        fontFamily: 'misans', // 使用自定义的中文字体
+        fontFamily: 'misans', // Using custom font
       ),
       home: Scaffold(
         appBar: AppBar(
@@ -29,186 +30,197 @@ class ContentWidget extends StatefulWidget {
 }
 
 class _ContentWidgetState extends State<ContentWidget> {
-  String? _content; // 用于存储异步结果
-  bool _isLoading = false; // 控制加载状态
-  bool _isValidUrl = true; // 控制 URL 格式验证状态
-  TextEditingController _urlController = TextEditingController(); // 控制输入框内容
-  TextEditingController _statusCodeController = TextEditingController(); // 控制状态码输入框内容
-  String _url = 'https://'; // 默认 URL
-  int? _expectedStatusCode; // 用户输入的期望状态码
+  String? _content; // To store the async result
+  bool _isLoading = false; // Loading state
+  bool _isValidUrl = true; // URL validation state
+  TextEditingController _urlController = TextEditingController(); // URL input controller
+  TextEditingController _statusCodeController = TextEditingController(); // Status code input controller
+  String _url = 'https://'; // Default URL
+  int _expectedStatusCode = 200; // Default expected status code is 200
 
-  // URL 格式验证
+  // URL format validation
   bool _isValidUrlFormat(String url) {
     final urlPattern = r'^(https?|ftp)://[^\s/$.?#].[^\s]*$';
     final regExp = RegExp(urlPattern);
     return regExp.hasMatch(url);
   }
 
-  // 自动添加 http:// 或 https:// 头部
+  // Add http:// or https:// if not present
   String _addHttpHeaderIfNeeded(String url) {
     if (url.isEmpty) return url;
 
-    // 如果 URL 没有以 http:// 或 https:// 开头，则自动添加 http://
+    // If URL doesn't start with http:// or https://, add http://
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return 'http://$url'; // 默认添加 http://
+      return 'http://$url'; // Default to add http://
     }
     return url;
   }
 
-  // 异步函数，触发时获取内容，接收 URL 参数
+  // Async function to load content, receives the URL parameter
   Future<void> _loadContent() async {
     setState(() {
-      _isLoading = true; // 开始加载
-      _url = _urlController.text.trim(); // 获取 URL
-      _url = _addHttpHeaderIfNeeded(_url); // 自动添加 http 头部
-      _isValidUrl = _isValidUrlFormat(_url); // 验证 URL 格式
-      _expectedStatusCode = int.tryParse(_statusCodeController.text); // 获取期望状态码
+      _isLoading = true; // Start loading
+      _url = _urlController.text.trim(); // Get URL from input
+      _url = _addHttpHeaderIfNeeded(_url); // Add HTTP header if needed
+      _isValidUrl = _isValidUrlFormat(_url); // Validate URL format
+
+      // Ensure default status code is 200 if user doesn't provide one
+      _expectedStatusCode = int.tryParse(_statusCodeController.text) ?? 200; // Get expected status code
     });
 
-    // 如果 URL 格式无效，复位并返回
-    if (!_isValidUrl) {
-      _reset(); // 调用复位方法清空内容和输入框
-      setState(() {
-        _content = 'Enter the right url'; // 提示用户 URL 格式无效
-      });
-      return;
-    }
+    if (_isValidUrl) {
+      // Make a real HTTP request
+      var result = await realHttpRequest(_url);
 
-    try {
-      final result = await getLearningContent(_url).timeout(
-        Duration(seconds: 8), // 设置超时时间为 8 秒
-        onTimeout: () {
-          // 超时后执行
-          return '114514'; // 超时返回 114514
-        },
-      );
+      int actualStatusCode = 0;
+      String responseBody = '';
+      String errorMessage = '';
+
+      // Get the status code, ensure it's an integer
+      if (result['statusCode'] is int) {
+        actualStatusCode = result['statusCode'];
+      } else if (result['statusCode'] is String) {
+        actualStatusCode = int.tryParse(result['statusCode']) ?? 0;
+      }
+
+      // Get the body, ensure it's a string
+      if (result['body'] is String) {
+        responseBody = result['body'];
+      }
+
+      // Check if actual status code matches the expected status code
+      if (actualStatusCode != _expectedStatusCode) {
+        errorMessage = 'Error: Expected status code $_expectedStatusCode, but got $actualStatusCode';
+      }
 
       setState(() {
-        if (_expectedStatusCode != null) {
-          // 获取实际返回的状态码并与用户输入的状态码比较
-          int actualStatusCode = int.tryParse(result.split(":")[1] ?? '') ?? 0;
-          if (actualStatusCode != _expectedStatusCode) {
-            _content = 'Something Wrong';
-          } else {
-            _content = result; // 返回正常内容
-          }
-        } else {
-          _content = result; // 返回正常内容
-        }
-      });
-    } catch (e) {
-      setState(() {
-        _content = 'Error: Failed to load content. Please try again.'; // 错误提示
-      });
-    } finally {
-      setState(() {
-        _isLoading = false; // 加载结束
+        _content = errorMessage.isNotEmpty
+            ? errorMessage
+            : 'Actual Status Code: $actualStatusCode\nResponse Body: $responseBody';
+        _isLoading = false; // Request completed, stop loading
       });
     }
   }
 
-  // 清除内容的方法
+  // Perform an actual HTTP request
+  Future<Map<String, dynamic>> realHttpRequest(String url) async {
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        return {
+          'statusCode': response.statusCode,
+          'body': response.body,
+        };
+      } else {
+        return {
+          'statusCode': response.statusCode,
+          'body': response.body,
+        };
+      }
+    } catch (e) {
+      return {
+        'statusCode': 0,
+        'body': 'Request Error: $e',
+      };
+    }
+  }
+
+  // Clear input fields and output content
   void _clearContent() {
     setState(() {
-      _content = null; // 清除显示内容
-      _urlController.clear(); // 清空 URL 输入框
-      _statusCodeController.clear(); // 清空状态码输入框
-    });
-  }
-
-  // 重置按钮：恢复初始状态
-  void _reset() {
-    setState(() {
-      _content = null; // 清除内容
-      _urlController.clear(); // 清空输入框
-      _statusCodeController.clear(); // 清空状态码输入框
-      _isLoading = false; // 重置加载状态
-      _isValidUrl = true; // 重置 URL 格式验证状态
+      _urlController.clear(); // Clear the URL input field
+      _statusCodeController.clear(); // Clear the status code input field
+      _content = null; // Clear the content
+      _isLoading = false; // Reset loading state
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16.0), // 添加内边距
+      padding: const EdgeInsets.all(16.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // URL 输入框
+        children: <Widget>[
+          // URL input field
           TextField(
             controller: _urlController,
             decoration: InputDecoration(
-              labelText: 'URL',
-              hintText: 'https://',
-              border: OutlineInputBorder(),
-              errorText: _isValidUrl ? null : 'URL Wrong', // 显示错误提示
+              labelText: 'Enter URL',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              prefixIcon: Icon(Icons.link),
+              filled: true,
+              fillColor: Colors.grey[200],
             ),
-            onChanged: (text) {
-              setState(() {
-                _url = text; // 更新 URL
-              });
-            },
+            keyboardType: TextInputType.url,
           ),
-          SizedBox(height: 20), // 间距
-          // 状态码输入框
+          SizedBox(height: 20),
+
+          // Expected status code input field
           TextField(
             controller: _statusCodeController,
-            keyboardType: TextInputType.number,
             decoration: InputDecoration(
               labelText: 'Expected Status Code',
-              hintText: '200',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              prefixIcon: Icon(Icons.code),
+              filled: true,
+              fillColor: Colors.grey[200],
             ),
-            onChanged: (text) {
-              setState(() {
-                _expectedStatusCode = int.tryParse(text); // 更新期望的状态码
-              });
-            },
+            keyboardType: TextInputType.number,
           ),
-          SizedBox(height: 20), // 间距
-          // 内容显示部分
-          _buildContentDisplay(),
-          SizedBox(height: 20), // 间距
-          // 按钮部分
-          _buildButtons(),
+          SizedBox(height: 20),
+
+          // Load content button
+          ElevatedButton(
+            onPressed: _loadContent,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue, // Set button background color
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12.0), // Set rounded corners for button
+              ),
+              padding: EdgeInsets.symmetric(horizontal: 32.0, vertical: 12.0), // Set button padding
+            ),
+            child: _isLoading
+                ? CircularProgressIndicator(color: Colors.white) // Show progress indicator while loading
+                : Text(
+              'Load Content',
+              style: TextStyle(fontSize: 16, color: Colors.white), // Set button text style
+            ),
+          ),
+          SizedBox(height: 20),
+
+          // Clear button
+          ElevatedButton(
+            onPressed: _clearContent,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red, // Set button background color
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12.0), // Set rounded corners for button
+              ),
+              padding: EdgeInsets.symmetric(horizontal: 32.0, vertical: 12.0), // Set button padding
+            ),
+            child: Text(
+              'Clear Content',
+              style: TextStyle(fontSize: 16, color: Colors.white), // Set button text style
+            ),
+          ),
+          SizedBox(height: 20),
+
+          // Display the result of the request
+          if (_content != null) ...[
+            Text(
+              _content!,
+              style: TextStyle(fontSize: 16, color: Colors.black),
+              textAlign: TextAlign.center,
+            ),
+          ]
         ],
       ),
-    );
-  }
-
-  // 显示内容部分的 UI
-  Widget _buildContentDisplay() {
-    if (_isLoading) {
-      return CircularProgressIndicator(); // 加载时显示进度条
-    } else {
-      return Text(
-        _content ?? 'Click "Load" to fetch content.', // 提示用户加载内容
-        style: TextStyle(fontSize: 20),
-        textAlign: TextAlign.center,
-      );
-    }
-  }
-
-  // 按钮部分的 UI
-  Widget _buildButtons() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        ElevatedButton(
-          onPressed: _isLoading || !_isValidUrl ? null : _loadContent, // 防止无效 URL 点击
-          child: Text('Load'),
-        ),
-        SizedBox(width: 10), // 按钮之间的间距
-        ElevatedButton(
-          onPressed: _content == null ? null : _clearContent, // 清除内容
-          child: Text('Clear'),
-        ),
-        SizedBox(width: 10), // 按钮之间的间距
-        ElevatedButton(
-          onPressed: _reset, // 重置按钮
-          child: Text('Reset'),
-        ),
-      ],
     );
   }
 }
