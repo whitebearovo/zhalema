@@ -1,0 +1,24 @@
+name: a114514
+description: A new Flutter project.
+
+# 设置 Flutter SDK 依赖
+environment:
+  sdk: ">=2.12.0 <3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^0.13.5  # 示例的其他依赖项
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+
+  # 字体配置
+  fonts:
+    - family: misans
+      fonts:
+        - asset: fonts/MiSans-Normal.ttf
