@@ -1,3 +1,4 @@
+import 'dart:async'; // Import dart:async for handling timeouts
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -58,51 +59,71 @@ class _ContentWidgetState extends State<ContentWidget> {
 
   // Async function to load content, receives the URL parameter
   Future<void> _loadContent() async {
+    // Validate if the URL or expected status code is empty
+    if (_urlController.text.trim().isEmpty) {
+      setState(() {
+        _content = 'Please enter a valid URL';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    // Default to 200 if the status code input is empty
+    if (_statusCodeController.text.trim().isEmpty) {
+      _expectedStatusCode = 200;
+    } else {
+      _expectedStatusCode = int.tryParse(_statusCodeController.text) ?? 200;
+    }
+
     setState(() {
       _isLoading = true; // Start loading
       _url = _urlController.text.trim(); // Get URL from input
       _url = _addHttpHeaderIfNeeded(_url); // Add HTTP header if needed
       _isValidUrl = _isValidUrlFormat(_url); // Validate URL format
-
-      // Ensure default status code is 200 if user doesn't provide one
-      _expectedStatusCode = int.tryParse(_statusCodeController.text) ?? 200; // Get expected status code
     });
 
     if (_isValidUrl) {
-      // Make a real HTTP request
-      var result = await realHttpRequest(_url);
+      try {
+        // Add timeout mechanism, automatically stop the request after 5 seconds
+        var result = await realHttpRequest(_url).timeout(Duration(seconds: 5));
 
-      int actualStatusCode = 0;
-      String responseBody = '';
-      String errorMessage = '';
+        int actualStatusCode = 0;
+        String responseBody = '';
+        String errorMessage = '';
 
-      // Get the status code, ensure it's an integer
-      if (result['statusCode'] is int) {
-        actualStatusCode = result['statusCode'];
-      } else if (result['statusCode'] is String) {
-        actualStatusCode = int.tryParse(result['statusCode']) ?? 0;
+        // Get the statusCode, ensure it's an integer
+        if (result['statusCode'] is int) {
+          actualStatusCode = result['statusCode'];
+        } else if (result['statusCode'] is String) {
+          actualStatusCode = int.tryParse(result['statusCode']) ?? 0;
+        }
+
+        // Get the body, ensure it's a string
+        if (result['body'] is String) {
+          responseBody = result['body'];
+        }
+
+        // Check if actual status code matches the expected status code
+        if (actualStatusCode != _expectedStatusCode) {
+          errorMessage = 'Error: Expected status code $_expectedStatusCode, but got $actualStatusCode';
+        }
+
+        setState(() {
+          _content = errorMessage.isNotEmpty
+              ? errorMessage
+              : 'Actual Status Code: $actualStatusCode\nResponse Body: $responseBody';
+          _isLoading = false; // Request completed, stop loading
+        });
+      } on TimeoutException {
+        setState(() {
+          _content = 'Request timed out, please try again later'; // Timeout handling
+          _isLoading = false;
+        });
       }
-
-      // Get the body, ensure it's a string
-      if (result['body'] is String) {
-        responseBody = result['body'];
-      }
-
-      // Check if actual status code matches the expected status code
-      if (actualStatusCode != _expectedStatusCode) {
-        errorMessage = 'Error: Expected status code $_expectedStatusCode, but got $actualStatusCode';
-      }
-
-      setState(() {
-        _content = errorMessage.isNotEmpty
-            ? errorMessage
-            : 'Actual Status Code: $actualStatusCode\nResponse Body: $responseBody';
-        _isLoading = false; // Request completed, stop loading
-      });
     }
   }
 
-  // Perform an actual HTTP request
+  // Perform the actual HTTP request
   Future<Map<String, dynamic>> realHttpRequest(String url) async {
     try {
       final response = await http.get(Uri.parse(url));
@@ -121,7 +142,7 @@ class _ContentWidgetState extends State<ContentWidget> {
     } catch (e) {
       return {
         'statusCode': 0,
-        'body': 'Request Error: $e',
+        'body': 'Request error: $e',
       };
     }
   }
